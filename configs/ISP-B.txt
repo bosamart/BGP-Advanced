@@ -1,0 +1,45 @@
+! ====================================================================
+! ISP-B - upstream provider  (AS 65200)   Loopback0 200.200.200.200/32
+! ---------------------------------------------------------------
+! Second upstream for multihoming. It originates:
+!   8.8.8.0/24       <- shared "internet" prefix (ISP-A originates it too)
+!   198.51.100.0/24  <- unique to ISP-B
+! and learns 172.16.0.0/16 from our AS via R4 -- but with a PREPENDED AS-path
+! (R4 prepends), so the wider internet reaches us via ISP-A by default.
+! ====================================================================
+hostname ISP-B
+!
+route-policy PASS
+  pass
+end-policy
+!
+router static
+ address-family ipv4 unicast
+  8.8.8.0/24 Null0
+  198.51.100.0/24 Null0
+ !
+!
+! ===== Interfaces =====
+interface Loopback0
+ ipv4 address 200.200.200.200 255.255.255.255
+!
+interface GigabitEthernet0/0/0/0          ! to R4
+ ipv4 address 100.64.2.2 255.255.255.252
+!
+! ===== BGP =====
+router bgp 65200
+ bgp router-id 200.200.200.200
+ address-family ipv4 unicast
+  network 8.8.8.0/24
+  network 198.51.100.0/24
+ !
+ neighbor 100.64.2.1
+  remote-as 65000
+  description eBGP-to-R4-AS65000
+  address-family ipv4 unicast
+   route-policy PASS in
+   route-policy PASS out
+  !
+ !
+!
+end

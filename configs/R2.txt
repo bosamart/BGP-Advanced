@@ -1,0 +1,86 @@
+! ====================================================================
+! R2 - ROUTE REFLECTOR  (AS 65000)   Loopback0 2.2.2.2/32
+! ---------------------------------------------------------------
+! Phase 1 : IS-IS L2 underlay
+! Phase 2 : iBGP full-mesh member (peers R1, R3, R4)
+! Phase 3 : becomes a ROUTE REFLECTOR
+!            - R1 and R4 are reflector CLIENTS
+!            - R3 is a non-client RR peer (RR <-> RR)
+! R2 originates nothing and runs no eBGP -- it only reflects.
+! NOTE: new XR interfaces may come up admin-down -- 'no shutdown' when pasting.
+! ====================================================================
+hostname R2
+!
+! ===== Interfaces =====
+interface Loopback0
+ ipv4 address 2.2.2.2 255.255.255.255
+!
+interface GigabitEthernet0/0/0/0          ! to R1
+ ipv4 address 10.12.0.2 255.255.255.252
+!
+interface GigabitEthernet0/0/0/1          ! to R3 (cross-link)
+ ipv4 address 10.23.0.1 255.255.255.252
+!
+interface GigabitEthernet0/0/0/3          ! to R4
+ ipv4 address 10.24.0.1 255.255.255.252
+!
+! ===== Phase 1: IS-IS underlay =====
+router isis CORE
+ is-type level-2-only
+ net 49.0001.0000.0000.0002.00
+ address-family ipv4 unicast
+  metric-style wide
+ !
+ interface Loopback0
+  passive
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/0
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/1
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/3
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+!
+! ===== BGP - Route Reflector =====
+router bgp 65000
+ bgp router-id 2.2.2.2
+ address-family ipv4 unicast
+ !
+ ! --- Clients: R1 and R4 (Phase 3) ---
+ neighbor 1.1.1.1
+  remote-as 65000
+  description RR-CLIENT-R1
+  update-source Loopback0
+  address-family ipv4 unicast
+   route-reflector-client
+  !
+ !
+ neighbor 4.4.4.4
+  remote-as 65000
+  description RR-CLIENT-R4
+  update-source Loopback0
+  address-family ipv4 unicast
+   route-reflector-client
+  !
+ !
+ ! --- Non-client iBGP peer: the other RR (R3) ---
+ neighbor 3.3.3.3
+  remote-as 65000
+  description iBGP-RR-peer-R3
+  update-source Loopback0
+  address-family ipv4 unicast
+  !
+ !
+!
+end

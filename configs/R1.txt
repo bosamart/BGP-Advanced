@@ -1,0 +1,137 @@
+! ====================================================================
+! R1 - EDGE to ISP-A (AS 65100)  |  iBGP route-reflector CLIENT
+! AS 65000   Loopback0 1.1.1.1/32
+! ---------------------------------------------------------------
+! Phase 1 : IS-IS L2 underlay (loopback reachability for iBGP)
+! Phase 2 : iBGP (full mesh first) + eBGP to ISP-A ; originate 172.16/16
+! Phase 3 : iBGP migrated to route-reflector clients (peer R2 & R3 only)
+! Phase 4 : inbound from ISP-A gets local-preference 200 (prefer this exit)
+! Phase 5 : tag ISP-A routes with community 65000:100
+! Phase 6 : inbound allow-list + max-prefix (+ optional RPKI block)
+! NOTE: new XR interfaces may come up admin-down -- 'no shutdown' when pasting.
+! ====================================================================
+hostname R1
+!
+! ===== Prefix sets =====
+prefix-set OUR-AGGREGATE
+  172.16.0.0/16
+end-set
+!
+prefix-set ISP-A-ALLOWED-IN          ! Phase 6: only accept what we expect from ISP-A
+  8.8.8.0/24,
+  203.0.113.0/24
+end-set
+!
+! ===== Route policies =====
+route-policy ISP-A-IN
+  if destination in OUR-AGGREGATE then
+    drop                              ! never accept our own space back from the ISP
+  elseif destination in ISP-A-ALLOWED-IN then
+    set local-preference 200          ! Phase 4: whole AS prefers ISP-A for these
+    set community (65000:100) additive ! Phase 5: mark "learned via ISP-A"
+    pass
+  else
+    drop                              ! Phase 6: explicit allow-list, drop the rest
+  endif
+end-policy
+!
+route-policy ISP-A-OUT
+  if destination in OUR-AGGREGATE then
+    pass                              ! advertise ONLY our aggregate (no transit)
+  else
+    drop
+  endif
+end-policy
+!
+! ===== Originate our aggregate (network stmt needs a matching RIB route) =====
+router static
+ address-family ipv4 unicast
+  172.16.0.0/16 Null0
+ !
+!
+! ===== Interfaces =====
+interface Loopback0
+ ipv4 address 1.1.1.1 255.255.255.255
+!
+interface GigabitEthernet0/0/0/0          ! to ISP-A (eBGP, NOT in IGP)
+ ipv4 address 100.64.1.1 255.255.255.252
+!
+interface GigabitEthernet0/0/0/1          ! to R2
+ ipv4 address 10.12.0.1 255.255.255.252
+!
+interface GigabitEthernet0/0/0/3          ! to R3
+ ipv4 address 10.13.0.1 255.255.255.252
+!
+! ===== Phase 1: IS-IS underlay (core links + loopback only) =====
+router isis CORE
+ is-type level-2-only
+ net 49.0001.0000.0000.0001.00
+ address-family ipv4 unicast
+  metric-style wide
+ !
+ interface Loopback0
+  passive
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/1
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/3
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+!
+! ===== BGP =====
+router bgp 65000
+ bgp router-id 1.1.1.1
+ address-family ipv4 unicast
+  network 172.16.0.0/16                   ! Phase 2: originate our aggregate
+ !
+ ! --- eBGP to ISP-A (Phase 2) ---
+ neighbor 100.64.1.2
+  remote-as 65100
+  description eBGP-to-ISP-A
+  address-family ipv4 unicast
+   route-policy ISP-A-IN in
+   route-policy ISP-A-OUT out
+   maximum-prefix 1000 80                 ! Phase 6: protect against a full-table leak
+  !
+ !
+ ! --- iBGP to the route reflectors R2 & R3 (Phase 3) ---
+ ! (Phase 2 was a full mesh: R1 also peered 4.4.4.4. Phase 3 removes that —
+ !  clients talk only to the RRs.)
+ neighbor 2.2.2.2
+  remote-as 65000
+  description iBGP-to-RR-R2
+  update-source Loopback0
+  address-family ipv4 unicast
+   next-hop-self                          ! make eBGP-learned next-hop reachable in iBGP
+  !
+ !
+ neighbor 3.3.3.3
+  remote-as 65000
+  description iBGP-to-RR-R3
+  update-source Loopback0
+  address-family ipv4 unicast
+   next-hop-self
+  !
+ !
+!
+! ===== Phase 6 (OPTIONAL): RPKI origin validation =====
+! Needs an external RPKI validator (e.g. Routinator/rpki-client) reachable at the
+! address below. Uncomment once you have one running, then drop INVALID routes via
+! a route-policy that matches 'validation-state is invalid'. See docs/RPKI.md.
+!
+! router bgp 65000
+!  rpki server 192.0.2.250
+!   transport tcp port 3323
+!  !
+!  address-family ipv4 unicast
+!   bgp bestpath origin-as use validity
+!  !
+!
+end

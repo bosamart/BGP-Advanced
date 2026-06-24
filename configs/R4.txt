@@ -1,0 +1,123 @@
+! ====================================================================
+! R4 - EDGE to ISP-B (AS 65200)  |  iBGP route-reflector CLIENT
+! AS 65000   Loopback0 4.4.4.4/32
+! ---------------------------------------------------------------
+! Phase 1 : IS-IS L2 underlay
+! Phase 2 : iBGP (full mesh first) + eBGP to ISP-B ; originate 172.16/16
+! Phase 3 : iBGP migrated to route-reflector clients (peer R2 & R3 only)
+! Phase 4 : inbound from ISP-B keeps local-preference 100 (less-preferred exit)
+! Phase 5 : prepend our AS when advertising to ISP-B -> inbound prefers ISP-A
+! Phase 6 : inbound allow-list + max-prefix (+ optional RPKI block)
+! NOTE: new XR interfaces may come up admin-down -- 'no shutdown' when pasting.
+! ====================================================================
+hostname R4
+!
+! ===== Prefix sets =====
+prefix-set OUR-AGGREGATE
+  172.16.0.0/16
+end-set
+!
+prefix-set ISP-B-ALLOWED-IN
+  8.8.8.0/24,
+  198.51.100.0/24
+end-set
+!
+! ===== Route policies =====
+route-policy ISP-B-IN
+  if destination in OUR-AGGREGATE then
+    drop
+  elseif destination in ISP-B-ALLOWED-IN then
+    set local-preference 100            ! Phase 4: default pref -> ISP-A (LP 200) wins
+    set community (65000:200) additive  ! Phase 5: mark "learned via ISP-B"
+    pass
+  else
+    drop
+  endif
+end-policy
+!
+route-policy ISP-B-OUT
+  if destination in OUR-AGGREGATE then
+    prepend as-path 65000 2             ! Phase 5: 2x prepend -> longer path to ISP-B
+    pass                                ! so the internet reaches us via ISP-A
+  else
+    drop
+  endif
+end-policy
+!
+! ===== Originate our aggregate =====
+router static
+ address-family ipv4 unicast
+  172.16.0.0/16 Null0
+ !
+!
+! ===== Interfaces =====
+interface Loopback0
+ ipv4 address 4.4.4.4 255.255.255.255
+!
+interface GigabitEthernet0/0/0/1          ! to ISP-B (eBGP, NOT in IGP)
+ ipv4 address 100.64.2.1 255.255.255.252
+!
+interface GigabitEthernet0/0/0/2          ! to R2
+ ipv4 address 10.24.0.2 255.255.255.252
+!
+interface GigabitEthernet0/0/0/3          ! to R3
+ ipv4 address 10.34.0.2 255.255.255.252
+!
+! ===== Phase 1: IS-IS underlay =====
+router isis CORE
+ is-type level-2-only
+ net 49.0001.0000.0000.0004.00
+ address-family ipv4 unicast
+  metric-style wide
+ !
+ interface Loopback0
+  passive
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/2
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/3
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+!
+! ===== BGP =====
+router bgp 65000
+ bgp router-id 4.4.4.4
+ address-family ipv4 unicast
+  network 172.16.0.0/16
+ !
+ ! --- eBGP to ISP-B ---
+ neighbor 100.64.2.2
+  remote-as 65200
+  description eBGP-to-ISP-B
+  address-family ipv4 unicast
+   route-policy ISP-B-IN in
+   route-policy ISP-B-OUT out
+   maximum-prefix 1000 80
+  !
+ !
+ ! --- iBGP to the route reflectors R2 & R3 ---
+ neighbor 2.2.2.2
+  remote-as 65000
+  description iBGP-to-RR-R2
+  update-source Loopback0
+  address-family ipv4 unicast
+   next-hop-self
+  !
+ !
+ neighbor 3.3.3.3
+  remote-as 65000
+  description iBGP-to-RR-R3
+  update-source Loopback0
+  address-family ipv4 unicast
+   next-hop-self
+  !
+ !
+!
+end
