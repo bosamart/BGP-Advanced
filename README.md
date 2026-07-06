@@ -166,37 +166,44 @@ See [`diagrams/topology.md`](diagrams/topology.md) for the BGP session mesh vs. 
 
 ---
 
-## How to build this — two paths
+## The paste ritual (do this for every phase)
 
-**Path A — speed-run (you already know XR):** paste each device's full file from [`configs/`](configs/)
-(final state, all 6 phases) and skip to the [TL;DR verify](#tldr--quick-start).
+New to IOS-XR? This is the exact loop you repeat in **every** phase below. Do it once slowly and it
+becomes automatic:
 
-**Path B — learn it phase by phase (recommended):** work down the phases below. Each phase has a
-collapsible **► Configure** block holding *only the delta that phase adds*, per device. Paste that
-block into the matching router, `commit`, run the verify commands, then move on. The configs are
-**cumulative** — Phase 4 edits the same route-policy Phase 2 created, so by Phase 6 you've landed
-exactly on the shipped `configs/` files.
-
-**The IOS-XR candidate/commit workflow (every paste):**
+1. **Pick the router** the block is labelled for — each block starts with a banner like `! ===== R1 =====`.
+2. On that router, type `conf t` to enter config mode. **Nothing is live yet** — you're editing a
+   *candidate* copy.
+3. **Paste the whole block** for that router.
+4. Type `commit`. **This is the moment the config goes live.** (Made a mess? Type `abort` instead —
+   it throws the candidate away and changes nothing.)
+5. Type `end` to leave config mode, then move to the next router the phase lists.
+6. When every router in the phase is done, run that phase's **Verify** commands before moving on.
 
 ```
-conf t                 ! enter global config — you're now editing a CANDIDATE, nothing is live yet
-<paste the phase block>
-show configuration      ! (optional) review the candidate before it takes effect
-commit                  ! atomically apply the whole candidate — this is what activates it
+conf t
+  … paste the block …
+commit          ! activates it
 end
 ```
 
-Nothing you paste is active until `commit`. If a paste looks wrong, `abort` throws the candidate away
-before it ever touches the running config. After changing an inbound route-policy, tell BGP to
-re-evaluate what a neighbor already sent you without bouncing the session:
+**Two ways to build:**
+
+- **Learn it, phase by phase (recommended):** follow the phases in order. Each **► Configure** block
+  holds *only what that phase adds* — the configs are **cumulative**, so Phase 4 edits the same
+  route-policy Phase 2 made, and by Phase 6 you've built the full [`configs/`](configs/) files.
+- **Speed-run:** if you already know XR, paste each device's full file from [`configs/`](configs/)
+  and jump to the [TL;DR verify](#tldr--quick-start).
+
+**One extra command you'll need** in Phases 4–6: after changing an *inbound* route-policy, tell BGP
+to re-check what the neighbour already sent — without dropping the session:
 
 ```
-clear bgp ipv4 unicast <neighbor> soft in    ! re-apply inbound policy (no session reset)
+clear bgp ipv4 unicast <neighbor-ip> soft in
 ```
 
-> **XR gotcha:** newly added interfaces can come up admin-down — add `no shutdown` under any
-> interface that stays down after commit.
+> **If an interface stays down** after commit, add `no shutdown` under it — brand-new XR interfaces
+> can come up admin-down.
 
 ---
 
@@ -212,6 +219,9 @@ prefixes). Keep the two jobs separate and the design stays sane.
 
 <details>
 <summary><b>► Configure Phase 1</b> — paste per device, then <code>commit</code> (R1–R4; ISPs are not in the IGP)</summary>
+
+*First time? → follow [the paste ritual](#the-paste-ritual-do-this-for-every-phase).*
+**Paste order:** R1 → R2 → R3 → R4 (paste each router's block, then `commit`, then the next router).
 
 ```
 ! ===================== R1 =====================
@@ -413,6 +423,9 @@ originate our aggregate, and learn the ISP prefixes everywhere.
 
 <details>
 <summary><b>► Configure Phase 2</b> — eBGP + iBGP full mesh + originate the aggregate (all 6 devices)</summary>
+
+*First time? → follow [the paste ritual](#the-paste-ritual-do-this-for-every-phase).*
+**Paste order:** R1 → R2 → R3 → R4 → ISP-A → ISP-B (six devices this phase — each block then `commit`).
 
 > The full mesh is deliberate here so you *feel* why it doesn't scale. Phase 3 tears the
 > `R1↔R4` session down and moves to route reflectors. The `ISP-*-IN` policies start as a plain
@@ -711,6 +724,9 @@ that sees its own cluster-id in the cluster-list, drops the route. No counting t
 <details>
 <summary><b>► Configure Phase 3</b> — promote R2/R3 to RRs, then drop the R1↔R4 mesh session</summary>
 
+*First time? → follow [the paste ritual](#the-paste-ritual-do-this-for-every-phase).*
+**Paste order:** R2 → R3 first (make them reflectors), then R1 → R4 (remove the old mesh session) — order matters here.
+
 > Migrate safely: first add the client keywords on the RRs, confirm every route still arrives,
 > *then* remove the direct `R1↔R4` session. Re-applying a `neighbor` block just adds the new
 > sub-command; `no neighbor` removes a session.
@@ -826,6 +842,9 @@ including R4, which is physically attached to ISP-B — prefers the exit via R1/
 <details>
 <summary><b>► Configure Phase 4</b> — set local-preference on the two edges (R1, R4)</summary>
 
+*First time? → follow [the paste ritual](#the-paste-ritual-do-this-for-every-phase).*
+**Paste order:** R1, then R4 (only the two edge routers change this phase). Don't skip the `clear … soft in` line at the end of each block.
+
 > You're **replacing** the `pass`-only policies from Phase 2. Re-pasting a `route-policy` with the
 > same name overwrites it. After commit, run the `clear ... soft in` so BGP re-scores routes the
 > ISP already sent.
@@ -899,6 +918,9 @@ so the wider internet sees `65000 65000 65000` via ISP-B vs `65000` via ISP-A �
 
 <details>
 <summary><b>► Configure Phase 5</b> — tag inbound with communities (R1, R4) + prepend outbound to ISP-B (R4)</summary>
+
+*First time? → follow [the paste ritual](#the-paste-ritual-do-this-for-every-phase).*
+**Paste order:** R1, then R4 (edge routers only). Each block ends with a `clear … soft` — run it so the change takes effect.
 
 ```
 ! ===================== R1 (add community tag to ISP-A routes) =====================
@@ -998,6 +1020,9 @@ router bgp 65000
 
 <details>
 <summary><b>► Configure Phase 6</b> — tighten inbound to an allow-list + add max-prefix (R1, R4)</summary>
+
+*First time? → follow [the paste ritual](#the-paste-ritual-do-this-for-every-phase).*
+**Paste order:** R1, then R4 (edge routers only). RPKI stays commented until you have a validator — that's expected.
 
 > This replaces the open `else pass` from Phase 5 with an explicit **allow-list** and lands the
 > policies exactly on the shipped `configs/`. RPKI stays commented until you have a validator.
