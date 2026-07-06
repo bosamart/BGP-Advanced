@@ -69,6 +69,11 @@ Want to learn instead of speed-run? Skip this and follow the phases.
 
 ## Topology
 
+![Advanced BGP lab — dual-ISP diamond with redundant route reflectors](diagrams/topology.svg)
+
+<details>
+<summary>Same topology as ASCII (copy-paste friendly)</summary>
+
 ```
                  +-----------+                         +-----------+
                  |  ISP-A    |                         |  ISP-B    |
@@ -90,6 +95,11 @@ Want to learn instead of speed-run? Skip this and follow the phases.
           +-----------+ +-----------+
               (R2 and R3 are the two redundant route reflectors)
 ```
+
+</details>
+
+> GitHub renders the SVG in light mode inside `<img>`; open `diagrams/topology.svg` directly for the
+> dark-mode-adaptive version.
 
 Logical roles: **R1** and **R4** are the AS edges (one eBGP upstream each) and are
 route-reflector **clients**. **R2** and **R3** sit in the core and act as **redundant route
@@ -156,6 +166,40 @@ See [`diagrams/topology.md`](diagrams/topology.md) for the BGP session mesh vs. 
 
 ---
 
+## How to build this — two paths
+
+**Path A — speed-run (you already know XR):** paste each device's full file from [`configs/`](configs/)
+(final state, all 6 phases) and skip to the [TL;DR verify](#tldr--quick-start).
+
+**Path B — learn it phase by phase (recommended):** work down the phases below. Each phase has a
+collapsible **► Configure** block holding *only the delta that phase adds*, per device. Paste that
+block into the matching router, `commit`, run the verify commands, then move on. The configs are
+**cumulative** — Phase 4 edits the same route-policy Phase 2 created, so by Phase 6 you've landed
+exactly on the shipped `configs/` files.
+
+**The IOS-XR candidate/commit workflow (every paste):**
+
+```
+conf t                 ! enter global config — you're now editing a CANDIDATE, nothing is live yet
+<paste the phase block>
+show configuration      ! (optional) review the candidate before it takes effect
+commit                  ! atomically apply the whole candidate — this is what activates it
+end
+```
+
+Nothing you paste is active until `commit`. If a paste looks wrong, `abort` throws the candidate away
+before it ever touches the running config. After changing an inbound route-policy, tell BGP to
+re-evaluate what a neighbor already sent you without bouncing the session:
+
+```
+clear bgp ipv4 unicast <neighbor> soft in    ! re-apply inbound policy (no session reset)
+```
+
+> **XR gotcha:** newly added interfaces can come up admin-down — add `no shutdown` under any
+> interface that stays down after commit.
+
+---
+
 ## Phase 1 — IS-IS underlay
 
 **Objective:** every core loopback reachable before any BGP. iBGP peers sit on loopbacks, so
@@ -166,14 +210,173 @@ hops apart. BGP doesn't find those loopbacks itself — the IGP (IS-IS) does. Th
 *infrastructure* routes (loopbacks, links); BGP carries *everything else* (customer/internet
 prefixes). Keep the two jobs separate and the design stays sane.
 
+<details>
+<summary><b>► Configure Phase 1</b> — paste per device, then <code>commit</code> (R1–R4; ISPs are not in the IGP)</summary>
+
 ```
+! ===================== R1 =====================
+interface Loopback0
+ ipv4 address 1.1.1.1 255.255.255.255
+!
+interface GigabitEthernet0/0/0/1
+ ipv4 address 10.12.0.1 255.255.255.252          ! to R2
+!
+interface GigabitEthernet0/0/0/3
+ ipv4 address 10.13.0.1 255.255.255.252          ! to R3
+!
 router isis CORE
  is-type level-2-only
  net 49.0001.0000.0000.0001.00
  address-family ipv4 unicast
   metric-style wide
- ...
+ !
+ interface Loopback0
+  passive
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/1
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/3
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+!
+commit
 ```
+
+```
+! ===================== R2 =====================
+interface Loopback0
+ ipv4 address 2.2.2.2 255.255.255.255
+!
+interface GigabitEthernet0/0/0/0
+ ipv4 address 10.12.0.2 255.255.255.252          ! to R1
+!
+interface GigabitEthernet0/0/0/1
+ ipv4 address 10.23.0.1 255.255.255.252          ! to R3 (cross-link)
+!
+interface GigabitEthernet0/0/0/3
+ ipv4 address 10.24.0.1 255.255.255.252          ! to R4
+!
+router isis CORE
+ is-type level-2-only
+ net 49.0001.0000.0000.0002.00
+ address-family ipv4 unicast
+  metric-style wide
+ !
+ interface Loopback0
+  passive
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/0
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/1
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/3
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+!
+commit
+```
+
+```
+! ===================== R3 =====================
+interface Loopback0
+ ipv4 address 3.3.3.3 255.255.255.255
+!
+interface GigabitEthernet0/0/0/0
+ ipv4 address 10.23.0.2 255.255.255.252          ! to R2 (cross-link)
+!
+interface GigabitEthernet0/0/0/2
+ ipv4 address 10.13.0.2 255.255.255.252          ! to R1
+!
+interface GigabitEthernet0/0/0/4
+ ipv4 address 10.34.0.1 255.255.255.252          ! to R4
+!
+router isis CORE
+ is-type level-2-only
+ net 49.0001.0000.0000.0003.00
+ address-family ipv4 unicast
+  metric-style wide
+ !
+ interface Loopback0
+  passive
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/0
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/2
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/4
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+!
+commit
+```
+
+```
+! ===================== R4 =====================
+interface Loopback0
+ ipv4 address 4.4.4.4 255.255.255.255
+!
+interface GigabitEthernet0/0/0/2
+ ipv4 address 10.24.0.2 255.255.255.252          ! to R2
+!
+interface GigabitEthernet0/0/0/3
+ ipv4 address 10.34.0.2 255.255.255.252          ! to R3
+!
+router isis CORE
+ is-type level-2-only
+ net 49.0001.0000.0000.0004.00
+ address-family ipv4 unicast
+  metric-style wide
+ !
+ interface Loopback0
+  passive
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/2
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+ interface GigabitEthernet0/0/0/3
+  point-to-point
+  address-family ipv4 unicast
+  !
+ !
+!
+commit
+```
+
+> **Only the system-id differs** (`...0001`→`...0004`), and each router lists *its own* core
+> interfaces. The ISP-facing interfaces (`100.64.x`) are added in Phase 2 — they never enter IS-IS.
+
+</details>
 
 **Verify**
 
@@ -208,24 +411,271 @@ originate our aggregate, and learn the ISP prefixes everywhere.
    100.64.1.2 (it's not in the IGP). `next-hop-self` rewrites the next-hop to R1's loopback,
    which the IGP *does* know. Forget this and routes are in the table but unreachable.
 
+<details>
+<summary><b>► Configure Phase 2</b> — eBGP + iBGP full mesh + originate the aggregate (all 6 devices)</summary>
+
+> The full mesh is deliberate here so you *feel* why it doesn't scale. Phase 3 tears the
+> `R1↔R4` session down and moves to route reflectors. The `ISP-*-IN` policies start as a plain
+> `pass` and get tightened in Phases 4–6.
+
 ```
-! eBGP (R1 -> ISP-A) — IOS-XR REQUIRES a route-policy or routes are silently dropped
+! ===================== R1 (edge → ISP-A) =====================
+interface GigabitEthernet0/0/0/0
+ ipv4 address 100.64.1.1 255.255.255.252         ! to ISP-A — eBGP only, NOT in IS-IS
+!
+prefix-set OUR-AGGREGATE
+  172.16.0.0/16
+end-set
+!
+route-policy ISP-A-IN
+  pass                                            ! Phase 2: accept everything for now
+end-policy
+!
+route-policy ISP-A-OUT
+  if destination in OUR-AGGREGATE then
+    pass                                          ! advertise ONLY our aggregate (no transit)
+  else
+    drop
+  endif
+end-policy
+!
+router static
+ address-family ipv4 unicast
+  172.16.0.0/16 Null0                             ! RIB route so 'network' can originate it
+ !
+!
+router bgp 65000
+ bgp router-id 1.1.1.1
+ address-family ipv4 unicast
+  network 172.16.0.0/16
+ !
  neighbor 100.64.1.2
   remote-as 65100
+  description eBGP-to-ISP-A
   address-family ipv4 unicast
    route-policy ISP-A-IN in
    route-policy ISP-A-OUT out
-!
-! iBGP full mesh (Phase 2): R1 peers R2, R3, AND R4 on loopbacks
- neighbor 4.4.4.4
+  !
+ !
+ ! --- iBGP FULL MESH: peer R2, R3, AND R4 ---
+ neighbor 2.2.2.2
   remote-as 65000
   update-source Loopback0
   address-family ipv4 unicast
    next-hop-self
+  !
+ !
+ neighbor 3.3.3.3
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+   next-hop-self
+  !
+ !
+ neighbor 4.4.4.4
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+   next-hop-self                                  ! Phase-2-only mesh session (removed in Phase 3)
+  !
+ !
+!
+commit
 ```
 
-> The committed [`configs/`](configs/) show the **Phase 3** end-state (RR overlay), where R1/R4
-> peer only the RRs. For Phase 2, temporarily also peer R1↔R4 directly to experience the full mesh.
+```
+! ===================== R4 (edge → ISP-B) =====================
+interface GigabitEthernet0/0/0/1
+ ipv4 address 100.64.2.1 255.255.255.252         ! to ISP-B — eBGP only, NOT in IS-IS
+!
+prefix-set OUR-AGGREGATE
+  172.16.0.0/16
+end-set
+!
+route-policy ISP-B-IN
+  pass
+end-policy
+!
+route-policy ISP-B-OUT
+  if destination in OUR-AGGREGATE then
+    pass
+  else
+    drop
+  endif
+end-policy
+!
+router static
+ address-family ipv4 unicast
+  172.16.0.0/16 Null0
+ !
+!
+router bgp 65000
+ bgp router-id 4.4.4.4
+ address-family ipv4 unicast
+  network 172.16.0.0/16
+ !
+ neighbor 100.64.2.2
+  remote-as 65200
+  description eBGP-to-ISP-B
+  address-family ipv4 unicast
+   route-policy ISP-B-IN in
+   route-policy ISP-B-OUT out
+  !
+ !
+ neighbor 2.2.2.2
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+   next-hop-self
+  !
+ !
+ neighbor 3.3.3.3
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+   next-hop-self
+  !
+ !
+ neighbor 1.1.1.1
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+   next-hop-self                                  ! Phase-2-only mesh session (removed in Phase 3)
+  !
+ !
+!
+commit
+```
+
+```
+! ===================== R2 (full-mesh member: peers R1, R3, R4) =====================
+router bgp 65000
+ bgp router-id 2.2.2.2
+ address-family ipv4 unicast
+ !
+ neighbor 1.1.1.1
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+  !
+ !
+ neighbor 3.3.3.3
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+  !
+ !
+ neighbor 4.4.4.4
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+  !
+ !
+!
+commit
+```
+
+```
+! ===================== R3 (full-mesh member: peers R1, R2, R4) =====================
+router bgp 65000
+ bgp router-id 3.3.3.3
+ address-family ipv4 unicast
+ !
+ neighbor 1.1.1.1
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+  !
+ !
+ neighbor 2.2.2.2
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+  !
+ !
+ neighbor 4.4.4.4
+  remote-as 65000
+  update-source Loopback0
+  address-family ipv4 unicast
+  !
+ !
+!
+commit
+```
+
+```
+! ===================== ISP-A (AS 65100) — full node, one shot =====================
+route-policy PASS
+  pass
+end-policy
+!
+router static
+ address-family ipv4 unicast
+  8.8.8.0/24 Null0
+  203.0.113.0/24 Null0
+ !
+!
+interface Loopback0
+ ipv4 address 100.100.100.100 255.255.255.255
+!
+interface GigabitEthernet0/0/0/0
+ ipv4 address 100.64.1.2 255.255.255.252
+!
+router bgp 65100
+ bgp router-id 100.100.100.100
+ address-family ipv4 unicast
+  network 8.8.8.0/24
+  network 203.0.113.0/24
+ !
+ neighbor 100.64.1.1
+  remote-as 65000
+  description eBGP-to-R1-AS65000
+  address-family ipv4 unicast
+   route-policy PASS in
+   route-policy PASS out
+  !
+ !
+!
+commit
+```
+
+```
+! ===================== ISP-B (AS 65200) — full node, one shot =====================
+route-policy PASS
+  pass
+end-policy
+!
+router static
+ address-family ipv4 unicast
+  8.8.8.0/24 Null0
+  198.51.100.0/24 Null0
+ !
+!
+interface Loopback0
+ ipv4 address 200.200.200.200 255.255.255.255
+!
+interface GigabitEthernet0/0/0/0
+ ipv4 address 100.64.2.2 255.255.255.252
+!
+router bgp 65200
+ bgp router-id 200.200.200.200
+ address-family ipv4 unicast
+  network 8.8.8.0/24
+  network 198.51.100.0/24
+ !
+ neighbor 100.64.2.1
+  remote-as 65000
+  description eBGP-to-R4-AS65000
+  address-family ipv4 unicast
+   route-policy PASS in
+   route-policy PASS out
+  !
+ !
+!
+commit
+```
+
+</details>
 
 **Verify**
 
@@ -258,20 +708,77 @@ that sees its own cluster-id in the cluster-list, drops the route. No counting t
 - From a **non-client** → reflect to clients **only**.
 - From an **eBGP** peer → send to everyone (normal).
 
+<details>
+<summary><b>► Configure Phase 3</b> — promote R2/R3 to RRs, then drop the R1↔R4 mesh session</summary>
+
+> Migrate safely: first add the client keywords on the RRs, confirm every route still arrives,
+> *then* remove the direct `R1↔R4` session. Re-applying a `neighbor` block just adds the new
+> sub-command; `no neighbor` removes a session.
+
 ```
-! On R2 (and mirror on R3):
+! ===================== R2 (route reflector) =====================
+router bgp 65000
  neighbor 1.1.1.1
-  remote-as 65000
-  update-source Loopback0
+  description RR-CLIENT-R1
   address-family ipv4 unicast
-   route-reflector-client          ! R1 is a client
+   route-reflector-client
+  !
  !
  neighbor 4.4.4.4
-  ... route-reflector-client       ! R4 is a client
+  description RR-CLIENT-R4
+  address-family ipv4 unicast
+   route-reflector-client
+  !
  !
  neighbor 3.3.3.3
-  ... (no client keyword)          ! the other RR — a non-client peer
+  description iBGP-RR-peer-R3                      ! other RR — non-client, no keyword
+ !
+!
+commit
 ```
+
+```
+! ===================== R3 (route reflector) =====================
+router bgp 65000
+ neighbor 1.1.1.1
+  description RR-CLIENT-R1
+  address-family ipv4 unicast
+   route-reflector-client
+  !
+ !
+ neighbor 4.4.4.4
+  description RR-CLIENT-R4
+  address-family ipv4 unicast
+   route-reflector-client
+  !
+ !
+ neighbor 2.2.2.2
+  description iBGP-RR-peer-R2                      ! other RR — non-client, no keyword
+ !
+!
+commit
+```
+
+```
+! ===================== R1 (drop the full-mesh session to R4) =====================
+router bgp 65000
+ no neighbor 4.4.4.4
+!
+commit
+```
+
+```
+! ===================== R4 (drop the full-mesh session to R1) =====================
+router bgp 65000
+ no neighbor 1.1.1.1
+!
+commit
+```
+
+> After this, R1 and R4 each hold exactly **two** iBGP sessions (to R2 and R3). Their descriptions
+> in the shipped configs read `iBGP-to-RR-R2` / `iBGP-to-RR-R3` — cosmetic, add them if you like.
+
+</details>
 
 **Redundancy detail:** R1 and R4 each peer **both** RRs, and each RR keeps its **own cluster-id**
 (the default = its router-id). Two cluster-ids means full path diversity and the cluster-list
@@ -316,12 +823,46 @@ show bgp ipv4 unicast summary        ! R1/R4 now have 2 iBGP sessions (to RRs), 
 stay at the default **100**. Local-pref is carried across iBGP, so *every* router in AS 65000 —
 including R4, which is physically attached to ISP-B — prefers the exit via R1/ISP-A.
 
+<details>
+<summary><b>► Configure Phase 4</b> — set local-preference on the two edges (R1, R4)</summary>
+
+> You're **replacing** the `pass`-only policies from Phase 2. Re-pasting a `route-policy` with the
+> same name overwrites it. After commit, run the `clear ... soft in` so BGP re-scores routes the
+> ISP already sent.
+
 ```
+! ===================== R1 (ISP-A → local-pref 200) =====================
 route-policy ISP-A-IN
-  ...
-  set local-preference 200       ! higher wins -> ISP-A preferred AS-wide
-  ...
+  if destination in OUR-AGGREGATE then
+    drop                                          ! never accept our own space back
+  else
+    set local-preference 200                      ! higher wins -> ISP-A preferred AS-wide
+    pass
+  endif
+end-policy
+!
+commit
+!
+clear bgp ipv4 unicast 100.64.1.2 soft in
 ```
+
+```
+! ===================== R4 (ISP-B → explicit local-pref 100) =====================
+route-policy ISP-B-IN
+  if destination in OUR-AGGREGATE then
+    drop
+  else
+    set local-preference 100                      ! default value, set explicitly -> ISP-A (200) wins
+    pass
+  endif
+end-policy
+!
+commit
+!
+clear bgp ipv4 unicast 100.64.2.2 soft in
+```
+
+</details>
 
 **Verify**
 
@@ -356,13 +897,54 @@ routes with **communities** so policy is driven by labels, not by re-matching pr
 We advertise our aggregate 172.16.0.0/16 out both edges. On R4 (→ ISP-B) we prepend our AS twice,
 so the wider internet sees `65000 65000 65000` via ISP-B vs `65000` via ISP-A → traffic comes in via ISP-A.
 
+<details>
+<summary><b>► Configure Phase 5</b> — tag inbound with communities (R1, R4) + prepend outbound to ISP-B (R4)</summary>
+
 ```
-route-policy ISP-B-OUT
+! ===================== R1 (add community tag to ISP-A routes) =====================
+route-policy ISP-A-IN
   if destination in OUR-AGGREGATE then
-    prepend as-path 65000 2        ! add our ASN 2 extra times
+    drop
+  else
+    set local-preference 200
+    set community (65000:100) additive            ! Phase 5: mark "learned via ISP-A"
     pass
   endif
+end-policy
+!
+commit
+!
+clear bgp ipv4 unicast 100.64.1.2 soft in
 ```
+
+```
+! ===================== R4 (tag ISP-B routes + prepend our aggregate to ISP-B) =====================
+route-policy ISP-B-IN
+  if destination in OUR-AGGREGATE then
+    drop
+  else
+    set local-preference 100
+    set community (65000:200) additive            ! Phase 5: mark "learned via ISP-B"
+    pass
+  endif
+end-policy
+!
+route-policy ISP-B-OUT
+  if destination in OUR-AGGREGATE then
+    prepend as-path 65000 2                        ! add our ASN 2 extra times -> longer path
+    pass                                           ! so the internet reaches us via ISP-A
+  else
+    drop
+  endif
+end-policy
+!
+commit
+!
+clear bgp ipv4 unicast 100.64.2.2 soft in         ! re-score inbound
+clear bgp ipv4 unicast 100.64.2.2 soft out        ! re-advertise the prepended aggregate
+```
+
+</details>
 
 **Communities** ([`docs/COMMUNITIES.md`](docs/COMMUNITIES.md)): we tag inbound ISP routes —
 `65000:100` from ISP-A, `65000:200` from ISP-B — so any later policy can act on "where did this
@@ -413,6 +995,80 @@ router bgp 65000
  address-family ipv4 unicast
   bgp bestpath origin-as use validity
 ```
+
+<details>
+<summary><b>► Configure Phase 6</b> — tighten inbound to an allow-list + add max-prefix (R1, R4)</summary>
+
+> This replaces the open `else pass` from Phase 5 with an explicit **allow-list** and lands the
+> policies exactly on the shipped `configs/`. RPKI stays commented until you have a validator.
+
+```
+! ===================== R1 (allow-list + max-prefix on ISP-A) =====================
+prefix-set ISP-A-ALLOWED-IN
+  8.8.8.0/24,
+  203.0.113.0/24
+end-set
+!
+route-policy ISP-A-IN
+  if destination in OUR-AGGREGATE then
+    drop                                          ! never accept our own space back
+  elseif destination in ISP-A-ALLOWED-IN then
+    set local-preference 200
+    set community (65000:100) additive
+    pass
+  else
+    drop                                          ! Phase 6: explicit allow-list, drop the rest
+  endif
+end-policy
+!
+router bgp 65000
+ neighbor 100.64.1.2
+  address-family ipv4 unicast
+   maximum-prefix 1000 80                         ! seatbelt vs a full-table leak
+  !
+ !
+!
+commit
+!
+clear bgp ipv4 unicast 100.64.1.2 soft in
+```
+
+```
+! ===================== R4 (allow-list + max-prefix on ISP-B) =====================
+prefix-set ISP-B-ALLOWED-IN
+  8.8.8.0/24,
+  198.51.100.0/24
+end-set
+!
+route-policy ISP-B-IN
+  if destination in OUR-AGGREGATE then
+    drop
+  elseif destination in ISP-B-ALLOWED-IN then
+    set local-preference 100
+    set community (65000:200) additive
+    pass
+  else
+    drop
+  endif
+end-policy
+!
+router bgp 65000
+ neighbor 100.64.2.2
+  address-family ipv4 unicast
+   maximum-prefix 1000 80
+  !
+ !
+!
+commit
+!
+clear bgp ipv4 unicast 100.64.2.2 soft in
+```
+
+> **RPKI (optional):** the `configs/R1.txt` and `R4.txt` carry the `rpki server` block **commented
+> out**. Uncomment it once a validator (Routinator / rpki-client) is reachable, then drop `Invalid`
+> routes with a policy matching `validation-state is invalid`. See [`docs/RPKI.md`](docs/RPKI.md).
+
+</details>
 
 **Failover test (the payoff).**
 

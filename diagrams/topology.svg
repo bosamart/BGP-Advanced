@@ -1,0 +1,137 @@
+<svg width="100%" viewBox="0 0 960 640" role="img" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <title>Advanced BGP lab — diamond topology with dual ISPs and route reflectors</title>
+  <desc>AS 65000 core of four XRv9000 routers in a diamond: R1 and R4 are the edges (one eBGP upstream each — ISP-A AS65100 and ISP-B AS65200) and are route-reflector clients; R2 and R3 sit in the core as redundant route reflectors joined by a cross-link. Core links run IS-IS; the two ISP links run eBGP only. iBGP overlay: each edge peers both RRs.</desc>
+
+  <style>
+    :root{
+      --panel:#F5F6F8; --panelStroke:#E4E6EA;
+      --edge:#1D5FA5; --edgeStroke:#0C447C;
+      --rr:#7A3FBE;   --rrStroke:#5A2A93;
+      --isp:#B5532A;  --ispStroke:#8A3E1F;
+      --nname:#FFFFFF; --nsub:#EAF0F8; --nsubi:#F6E9DF;
+      --core:#5AA6E6; --cross:#5AA6E6; --ebgp:#E08A4A; --ibgp:#9A7BD0;
+      --lbl:#44443F; --lblm:#7A7A72; --lbox:#FFFFFF; --lboxStroke:#E2E2DD;
+      --head:#2B2B29; --leg:#44443F;
+    }
+    @media (prefers-color-scheme: dark){
+      :root{
+        --panel:#1B1D21; --panelStroke:#2C2F34;
+        --edge:#2F6FB5; --edgeStroke:#5AA6E6;
+        --rr:#8A55C8;   --rrStroke:#B58EE6;
+        --isp:#C4682F;  --ispStroke:#E0975A;
+        --nname:#FFFFFF; --nsub:#DCE7F5; --nsubi:#F3E2D4;
+        --core:#5AA6E6; --cross:#5AA6E6; --ebgp:#E8985A; --ibgp:#B399E0;
+        --lbl:#C9CCD1; --lblm:#8A8F96; --lbox:#23262B; --lboxStroke:#33373D;
+        --head:#E6E8EB; --leg:#C9CCD1;
+      }
+    }
+    .panel{fill:var(--panel); stroke:var(--panelStroke);}
+    .edge{fill:var(--edge); stroke:var(--edgeStroke);}
+    .rr{fill:var(--rr); stroke:var(--rrStroke);}
+    .isp{fill:var(--isp); stroke:var(--ispStroke);}
+    .nname{fill:var(--nname); font-weight:700;}
+    .nsub{fill:var(--nsub);}
+    .nsubi{fill:var(--nsubi);}
+    .lcore{stroke:var(--core); stroke-width:3; fill:none;}
+    .lcross{stroke:var(--cross); stroke-width:3; stroke-dasharray:7 5; fill:none;}
+    .lebgp{stroke:var(--ebgp); stroke-width:3.5; fill:none;}
+    .libgp{stroke:var(--ibgp); stroke-width:2; stroke-dasharray:3 4; fill:none;}
+    .lbl{fill:var(--lbl);} .lblm{fill:var(--lblm);}
+    .lbox{fill:var(--lbox); stroke:var(--lboxStroke);}
+    .head{fill:var(--head); font-weight:700;}
+    .leg{fill:var(--leg);}
+  </style>
+
+  <rect x="6" y="6" width="948" height="628" rx="16" class="panel"/>
+  <text x="480" y="36" text-anchor="middle" font-size="17" class="head">Advanced BGP Lab — AS 65000, Dual ISP, Route Reflectors</text>
+  <text x="480" y="55" text-anchor="middle" font-size="11.5" class="lblm">Cisco IOS XRv9000 · EVE-NG · IS-IS L2 area 49.0001 underlay · iBGP RR overlay + eBGP to two upstreams</text>
+
+  <!-- ===== LINKS (under boxes) ===== -->
+  <!-- eBGP verticals -->
+  <line class="lebgp" x1="115" y1="112" x2="115" y2="252"/>
+  <line class="lebgp" x1="845" y1="112" x2="845" y2="252"/>
+  <!-- core links (physical, IS-IS) -->
+  <line class="lcore" x1="150" y1="270" x2="360" y2="168"/>
+  <line class="lcore" x1="150" y1="300" x2="360" y2="418"/>
+  <line class="lcore" x1="810" y1="270" x2="460" y2="168"/>
+  <line class="lcore" x1="810" y1="300" x2="460" y2="418"/>
+  <line class="lcross" x1="410" y1="188" x2="410" y2="398"/>
+
+  <!-- ===== iBGP overlay (thin dashed, client -> RR) ===== -->
+  <line class="libgp" x1="128" y1="262" x2="352" y2="170"/>
+  <line class="libgp" x1="128" y1="308" x2="352" y2="416"/>
+  <line class="libgp" x1="832" y1="262" x2="468" y2="170"/>
+  <line class="libgp" x1="832" y1="308" x2="468" y2="416"/>
+
+  <!-- ===== LINK LABELS ===== -->
+  <g><rect x="40" y="163" width="98" height="30" rx="5" class="lbox"/>
+    <text x="89" y="176" text-anchor="middle" font-size="10.5" class="lbl">100.64.1.0/30</text>
+    <text x="89" y="188" text-anchor="middle" font-size="8.5" class="lblm">eBGP · R1 Gi0 — ISP-A</text></g>
+  <g><rect x="822" y="163" width="98" height="30" rx="5" class="lbox"/>
+    <text x="871" y="176" text-anchor="middle" font-size="10.5" class="lbl">100.64.2.0/30</text>
+    <text x="871" y="188" text-anchor="middle" font-size="8.5" class="lblm">eBGP · R4 Gi1 — ISP-B</text></g>
+  <g><rect x="182" y="192" width="96" height="30" rx="5" class="lbox"/>
+    <text x="230" y="205" text-anchor="middle" font-size="10.5" class="lbl">10.12.0.0/30</text>
+    <text x="230" y="217" text-anchor="middle" font-size="8.5" class="lblm">R1 Gi1 — R2 Gi0</text></g>
+  <g><rect x="182" y="358" width="96" height="30" rx="5" class="lbox"/>
+    <text x="230" y="371" text-anchor="middle" font-size="10.5" class="lbl">10.13.0.0/30</text>
+    <text x="230" y="383" text-anchor="middle" font-size="8.5" class="lblm">R1 Gi3 — R3 Gi2</text></g>
+  <g><rect x="682" y="192" width="96" height="30" rx="5" class="lbox"/>
+    <text x="730" y="205" text-anchor="middle" font-size="10.5" class="lbl">10.24.0.0/30</text>
+    <text x="730" y="217" text-anchor="middle" font-size="8.5" class="lblm">R2 Gi3 — R4 Gi2</text></g>
+  <g><rect x="682" y="358" width="96" height="30" rx="5" class="lbox"/>
+    <text x="730" y="371" text-anchor="middle" font-size="10.5" class="lbl">10.34.0.0/30</text>
+    <text x="730" y="383" text-anchor="middle" font-size="8.5" class="lblm">R3 Gi4 — R4 Gi3</text></g>
+  <g><rect x="418" y="278" width="104" height="30" rx="5" class="lbox"/>
+    <text x="470" y="291" text-anchor="middle" font-size="10.5" class="lbl">10.23.0.0/30</text>
+    <text x="470" y="303" text-anchor="middle" font-size="8.5" class="lblm">RR ↔ RR cross-link</text></g>
+
+  <!-- ===== NODES ===== -->
+  <!-- ISP-A -->
+  <g><rect x="40" y="46" width="150" height="66" rx="10" class="isp"/>
+    <text x="115" y="72" text-anchor="middle" font-size="17" class="nname">ISP-A</text>
+    <text x="115" y="90" text-anchor="middle" font-size="10" class="nsubi">AS 65100 · upstream</text>
+    <text x="115" y="103" text-anchor="middle" font-size="9" class="nsubi">8.8.8.0/24 · 203.0.113.0/24</text></g>
+  <!-- ISP-B -->
+  <g><rect x="770" y="46" width="150" height="66" rx="10" class="isp"/>
+    <text x="845" y="72" text-anchor="middle" font-size="17" class="nname">ISP-B</text>
+    <text x="845" y="90" text-anchor="middle" font-size="10" class="nsubi">AS 65200 · upstream</text>
+    <text x="845" y="103" text-anchor="middle" font-size="9" class="nsubi">8.8.8.0/24 · 198.51.100.0/24</text></g>
+  <!-- R1 -->
+  <g><rect x="40" y="252" width="150" height="66" rx="10" class="edge"/>
+    <text x="115" y="278" text-anchor="middle" font-size="18" class="nname">R1</text>
+    <text x="115" y="296" text-anchor="middle" font-size="10" class="nsub">edge → ISP-A · RR client</text>
+    <text x="115" y="309" text-anchor="middle" font-size="9.5" class="nsub">Lo0 1.1.1.1</text></g>
+  <!-- R4 -->
+  <g><rect x="770" y="252" width="150" height="66" rx="10" class="edge"/>
+    <text x="845" y="278" text-anchor="middle" font-size="18" class="nname">R4</text>
+    <text x="845" y="296" text-anchor="middle" font-size="10" class="nsub">edge → ISP-B · RR client</text>
+    <text x="845" y="309" text-anchor="middle" font-size="9.5" class="nsub">Lo0 4.4.4.4</text></g>
+  <!-- R2 -->
+  <g><rect x="335" y="120" width="150" height="66" rx="10" class="rr"/>
+    <text x="410" y="146" text-anchor="middle" font-size="18" class="nname">R2</text>
+    <text x="410" y="164" text-anchor="middle" font-size="10" class="nsub">route reflector</text>
+    <text x="410" y="177" text-anchor="middle" font-size="9.5" class="nsub">Lo0 2.2.2.2 · cluster 2.2.2.2</text></g>
+  <!-- R3 -->
+  <g><rect x="335" y="400" width="150" height="66" rx="10" class="rr"/>
+    <text x="410" y="426" text-anchor="middle" font-size="18" class="nname">R3</text>
+    <text x="410" y="444" text-anchor="middle" font-size="10" class="nsub">route reflector</text>
+    <text x="410" y="457" text-anchor="middle" font-size="9.5" class="nsub">Lo0 3.3.3.3 · cluster 3.3.3.3</text></g>
+
+  <!-- ===== LEGEND ===== -->
+  <rect x="40" y="560" width="16" height="16" rx="3" class="edge"/>
+  <text x="63" y="572" font-size="11" class="leg">edge / RR client (R1, R4)</text>
+  <rect x="250" y="560" width="16" height="16" rx="3" class="rr"/>
+  <text x="273" y="572" font-size="11" class="leg">route reflector (R2, R3)</text>
+  <rect x="450" y="560" width="16" height="16" rx="3" class="isp"/>
+  <text x="473" y="572" font-size="11" class="leg">upstream ISP (different AS)</text>
+
+  <line class="lebgp" x1="40" y1="596" x2="74" y2="596"/>
+  <text x="82" y="600" font-size="11" class="leg">eBGP (ISP link, not in IGP)</text>
+  <line class="lcore" x1="250" y1="596" x2="284" y2="596"/>
+  <text x="292" y="600" font-size="11" class="leg">core link (IS-IS underlay)</text>
+  <line class="lcross" x1="450" y1="596" x2="484" y2="596"/>
+  <text x="492" y="600" font-size="11" class="leg">RR ↔ RR cross-link</text>
+  <line class="libgp" x1="650" y1="596" x2="684" y2="596"/>
+  <text x="692" y="600" font-size="11" class="leg">iBGP session (client → RR)</text>
+</svg>
